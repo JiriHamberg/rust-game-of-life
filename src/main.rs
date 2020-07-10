@@ -2,7 +2,6 @@ mod game_of_life;
 mod macros;
 mod opengl_ui;
 mod shader;
-mod shell_ui;
 
 use std::sync::mpsc::sync_channel;
 use std::thread;
@@ -10,13 +9,14 @@ use std::thread;
 use itertools::*;
 
 pub fn main() {
+    // rendezvous channel for publishing game state
     let (sender, receiver) = sync_channel(0);
 
     let canvas = opengl_ui::Canvas {
         point_receiver: receiver,
     };
 
-    let game_thread = thread::spawn(move || {
+    thread::spawn(move || {
         let mut game = game_of_life::GameOfLife::new_random(200, 200, 0.333);
         loop {
             game.step();
@@ -28,7 +28,10 @@ pub fn main() {
                 })
                 .collect();
 
-            sender.send(points).unwrap();
+            // blocks until received or error occurs
+            if let Err(_) = sender.send(points) {
+                break;
+            }
         }
     });
 
@@ -36,6 +39,5 @@ pub fn main() {
         canvas.run();
     });
 
-    game_thread.join().unwrap();
     canvas_thread.join().unwrap();
 }

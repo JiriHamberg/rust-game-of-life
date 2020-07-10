@@ -18,7 +18,6 @@ use cgmath::{perspective, vec3, Deg, Matrix4, Vector3};
 
 use std::time::{SystemTime, UNIX_EPOCH};
 
-// settings
 const SCR_WIDTH: u32 = 800;
 const SCR_HEIGHT: u32 = 800;
 
@@ -32,7 +31,6 @@ impl Canvas {
     #[allow(non_snake_case)]
     pub fn run(&self) {
         // glfw: initialize and configure
-        // ------------------------------
         let mut glfw = glfw::init(glfw::FAIL_ON_ERRORS).unwrap();
         glfw.window_hint(glfw::WindowHint::ContextVersion(3, 3));
         glfw.window_hint(glfw::WindowHint::OpenGlProfile(
@@ -42,7 +40,6 @@ impl Canvas {
         glfw.window_hint(glfw::WindowHint::OpenGlForwardCompat(true));
 
         // glfw window creation
-        // --------------------
         let (mut window, events) = glfw
             .create_window(
                 SCR_WIDTH,
@@ -57,16 +54,13 @@ impl Canvas {
         window.set_framebuffer_size_polling(true);
 
         // gl: load all OpenGL function pointers
-        // ---------------------------------------
         gl::load_with(|symbol| window.get_proc_address(symbol) as *const _);
 
         let (ourShader, VBO, VAO) = unsafe {
             // configure global opengl state
-            // -----------------------------
             gl::Enable(gl::DEPTH_TEST);
 
             // build and compile our shader program
-            // ------------------------------------
             let ourShader = Shader::new("src/shaders/rect.vs", "src/shaders/rect.fs");
 
             let vertices: [f32; 32] = [
@@ -138,10 +132,8 @@ impl Canvas {
             .as_millis();
 
         // render loop
-        // -----------
         while !window.should_close() {
             // events
-            // -----
             Canvas::process_events(&mut window, &events);
 
             let now = SystemTime::now()
@@ -156,11 +148,7 @@ impl Canvas {
                 None
             };
 
-            //let maybe_points = self.point_receiver.try_recv().ok();
-
             // render
-            // ------
-
             maybe_points.map(|points| {
                 unsafe {
                     gl::ClearColor(1.0, 1.0, 1.0, 1.0);
@@ -177,9 +165,9 @@ impl Canvas {
                     // retrieve the matrix uniform locations
                     let modelLoc = gl::GetUniformLocation(ourShader.ID, c_str!("model").as_ptr());
                     let viewLoc = gl::GetUniformLocation(ourShader.ID, c_str!("view").as_ptr());
-                    // pass them to the shaders (3 different ways)
+                    // pass them to the shaders
                     gl::UniformMatrix4fv(modelLoc, 1, gl::FALSE, model.as_ptr());
-                    gl::UniformMatrix4fv(viewLoc, 1, gl::FALSE, &view[0][0]);
+                    gl::UniformMatrix4fv(viewLoc, 1, gl::FALSE, view.as_ptr());
                     // note: currently we set the projection matrix each frame, but since the projection matrix rarely changes it's often best practice to set it outside the main loop only once.
                     ourShader.setMat4(c_str!("projection"), &projection);
 
@@ -188,7 +176,7 @@ impl Canvas {
                         .map(|(x, y)| vec3(*x as f32, *y as f32, 0.0))
                         .collect();
 
-                    // render boxes
+                    // render rectangle with different positions
                     gl::BindVertexArray(VAO);
                     for position in rectPositions {
                         // calculate the model matrix for each object and pass it to shader before drawing
@@ -207,23 +195,19 @@ impl Canvas {
             glfw.poll_events();
         }
 
-        // optional: de-allocate all resources once they've outlived their purpose:
-        // ------------------------------------------------------------------------
+        // de-allocate all resources once they've outlived their purpose
         unsafe {
             gl::DeleteVertexArrays(1, &VAO);
             gl::DeleteBuffers(1, &VBO);
         }
     }
 
-    // NOTE: not the same version as in common.rs!
     fn process_events(window: &mut glfw::Window, events: &Receiver<(f64, glfw::WindowEvent)>) {
         for (_, event) in glfw::flush_messages(events) {
             match event {
-                glfw::WindowEvent::FramebufferSize(width, height) => {
-                    // make sure the viewport matches the new window dimensions; note that width and
-                    // height will be significantly larger than specified on retina displays.
-                    unsafe { gl::Viewport(0, 0, width, height) }
-                }
+                glfw::WindowEvent::FramebufferSize(width, height) => unsafe {
+                    gl::Viewport(0, 0, width, height)
+                },
                 glfw::WindowEvent::Key(Key::Escape, _, Action::Press, _) => {
                     window.set_should_close(true)
                 }
