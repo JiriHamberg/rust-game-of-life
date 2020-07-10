@@ -35,9 +35,5 @@ pub fn main() {
         }
     });
 
-    let canvas_thread = thread::spawn(move || {
-        canvas.run();
-    });
-
-    canvas_thread.join().unwrap();
+    canvas.run();
 }
