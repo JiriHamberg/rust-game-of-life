@@ -14,14 +14,18 @@ use std::sync::mpsc::Receiver;
 use super::shader::Shader;
 
 use cgmath::prelude::*;
-use cgmath::{perspective, vec3, Deg, Matrix4, Rad, Vector3};
+use cgmath::{perspective, vec3, Deg, Matrix4, Vector3};
+
+use std::time::{SystemTime, UNIX_EPOCH};
 
 // settings
 const SCR_WIDTH: u32 = 800;
-const SCR_HEIGHT: u32 = 600;
+const SCR_HEIGHT: u32 = 800;
+
+const UPDATE_FREQ_MILLIS: u16 = 40;
 
 pub struct Canvas {
-    pub points: Vec<(i32, i32)>,
+    pub point_receiver: Receiver<Vec<(i32, i32)>>,
 }
 
 impl Canvas {
@@ -128,6 +132,11 @@ impl Canvas {
             (ourShader, VBO, VAO)
         };
 
+        let mut last_update = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_millis();
+
         // render loop
         // -----------
         while !window.should_close() {
@@ -135,53 +144,66 @@ impl Canvas {
             // -----
             Canvas::process_events(&mut window, &events);
 
+            let now = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_millis();
+
+            let maybe_points = if now - last_update > UPDATE_FREQ_MILLIS as u128 {
+                last_update = now;
+                self.point_receiver.try_recv().ok()
+            } else {
+                None
+            };
+
+            //let maybe_points = self.point_receiver.try_recv().ok();
+
             // render
             // ------
-            unsafe {
-                gl::ClearColor(1.0, 1.0, 1.0, 1.0);
-                gl::Clear(gl::COLOR_BUFFER_BIT | gl::DEPTH_BUFFER_BIT);
 
-                // activate shader
-                ourShader.useProgram();
+            maybe_points.map(|points| {
+                unsafe {
+                    gl::ClearColor(1.0, 1.0, 1.0, 1.0);
+                    gl::Clear(gl::COLOR_BUFFER_BIT | gl::DEPTH_BUFFER_BIT);
 
-                // create transformations
-                // NOTE: cgmath requires axis vectors to be normalized!
-                let model: Matrix4<f32> = Matrix4::from_axis_angle(
-                    vec3(0.5, 1.0, 0.0).normalize(),
-                    Rad(glfw.get_time() as f32),
-                );
-                let view: Matrix4<f32> = Matrix4::from_translation(vec3(0., 0., -100.));
-                let projection: Matrix4<f32> =
-                    perspective(Deg(45.0), SCR_WIDTH as f32 / SCR_HEIGHT as f32, 0.1, 100.0);
-                // retrieve the matrix uniform locations
-                let modelLoc = gl::GetUniformLocation(ourShader.ID, c_str!("model").as_ptr());
-                let viewLoc = gl::GetUniformLocation(ourShader.ID, c_str!("view").as_ptr());
-                // pass them to the shaders (3 different ways)
-                gl::UniformMatrix4fv(modelLoc, 1, gl::FALSE, model.as_ptr());
-                gl::UniformMatrix4fv(viewLoc, 1, gl::FALSE, &view[0][0]);
-                // note: currently we set the projection matrix each frame, but since the projection matrix rarely changes it's often best practice to set it outside the main loop only once.
-                ourShader.setMat4(c_str!("projection"), &projection);
+                    // activate shader
+                    ourShader.useProgram();
 
-                let rectPositions: Vec<Vector3<f32>> = self
-                    .points
-                    .iter()
-                    .map(|(x, y)| vec3(*x as f32, *y as f32, 0.0))
-                    .collect();
+                    let model: Matrix4<f32> = Matrix4::zero();
 
-                // render boxes
-                gl::BindVertexArray(VAO);
-                for position in rectPositions {
-                    // calculate the model matrix for each object and pass it to shader before drawing
-                    let model: Matrix4<f32> = Matrix4::from_translation(position);
-                    ourShader.setMat4(c_str!("model"), &model);
+                    let view: Matrix4<f32> = Matrix4::from_translation(vec3(0., 0., -250.));
+                    let projection: Matrix4<f32> =
+                        perspective(Deg(45.0), SCR_WIDTH as f32 / SCR_HEIGHT as f32, 0.1, 400.0);
+                    // retrieve the matrix uniform locations
+                    let modelLoc = gl::GetUniformLocation(ourShader.ID, c_str!("model").as_ptr());
+                    let viewLoc = gl::GetUniformLocation(ourShader.ID, c_str!("view").as_ptr());
+                    // pass them to the shaders (3 different ways)
+                    gl::UniformMatrix4fv(modelLoc, 1, gl::FALSE, model.as_ptr());
+                    gl::UniformMatrix4fv(viewLoc, 1, gl::FALSE, &view[0][0]);
+                    // note: currently we set the projection matrix each frame, but since the projection matrix rarely changes it's often best practice to set it outside the main loop only once.
+                    ourShader.setMat4(c_str!("projection"), &projection);
 
-                    gl::DrawElements(gl::TRIANGLES, 6, gl::UNSIGNED_INT, ptr::null());
+                    let rectPositions: Vec<Vector3<f32>> = points
+                        .iter()
+                        .map(|(x, y)| vec3(*x as f32, *y as f32, 0.0))
+                        .collect();
+
+                    // render boxes
+                    gl::BindVertexArray(VAO);
+                    for position in rectPositions {
+                        // calculate the model matrix for each object and pass it to shader before drawing
+                        let model: Matrix4<f32> =
+                            Matrix4::from_translation(position + vec3(-100.0, -100.0, 0.0));
+                        ourShader.setMat4(c_str!("model"), &model);
+
+                        gl::DrawElements(gl::TRIANGLES, 6, gl::UNSIGNED_INT, ptr::null());
+                    }
                 }
-            }
 
-            // glfw: swap buffers and poll IO events (keys pressed/released, mouse moved etc.)
-            // -------------------------------------------------------------------------------
-            window.swap_buffers();
+                // glfw: swap buffers
+                window.swap_buffers();
+            });
+            // glfw: poll IO events (keys pressed/released, mouse moved etc.)
             glfw.poll_events();
         }
 

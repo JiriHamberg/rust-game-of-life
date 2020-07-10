@@ -64,6 +64,19 @@ impl GameOfLife {
         self.state.get(yy).and_then(|line| line.get(xx)).copied()
     }
 
+    pub fn get_height(&self) -> i32 {
+        self.state.len().try_into().unwrap()
+    }
+
+    pub fn get_width(&self) -> i32 {
+        self.state
+            .first()
+            .map(|v| v.len())
+            .unwrap_or(0)
+            .try_into()
+            .unwrap()
+    }
+
     pub fn step(&mut self) {
         let mut next_state = self.state.clone();
 
