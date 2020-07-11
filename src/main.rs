@@ -1,6 +1,7 @@
 mod game_of_life;
 mod macros;
 mod opengl_ui;
+mod rectangle_program;
 mod shader;
 
 use std::sync::mpsc::sync_channel;

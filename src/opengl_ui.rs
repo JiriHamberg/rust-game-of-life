@@ -3,17 +3,11 @@ extern crate glfw;
 use self::glfw::{Action, Context, Key};
 
 extern crate gl;
-use self::gl::types::*;
 
-use std::ffi::CStr;
-use std::mem;
-use std::os::raw::c_void;
-use std::ptr;
 use std::sync::mpsc::Receiver;
 
-use super::shader::Shader;
+use super::rectangle_program::RectangleProgram;
 
-use cgmath::prelude::*;
 use cgmath::{perspective, vec3, Deg, Matrix4, Vector3};
 
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -56,149 +50,62 @@ impl Canvas {
         // gl: load all OpenGL function pointers
         gl::load_with(|symbol| window.get_proc_address(symbol) as *const _);
 
-        let (ourShader, VBO, VAO) = unsafe {
-            // configure global opengl state
+        unsafe {
             gl::Enable(gl::DEPTH_TEST);
+            let rectangle_program = RectangleProgram::new();
 
-            // build and compile our shader program
-            let ourShader = Shader::new("src/shaders/rect.vs", "src/shaders/rect.fs");
-
-            let vertices: [f32; 32] = [
-                // positions       // colors        // texture coords
-                0.5, 0.5, 0.0, 1.0, 0.0, 0.0, 1.0, 1.0, // top right
-                0.5, -0.5, 0.0, 0.0, 1.0, 0.0, 1.0, 0.0, // bottom right
-                -0.5, -0.5, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, // bottom left
-                -0.5, 0.5, 0.0, 1.0, 1.0, 0.0, 0.0, 1.0, // top left
-            ];
-            let indices = [
-                0, 1, 3, // first Triangle
-                1, 2, 3, // second Triangle
-            ];
-
-            let (mut VBO, mut VAO, mut EBO) = (0, 0, 0);
-            gl::GenVertexArrays(1, &mut VAO);
-            gl::GenBuffers(1, &mut VBO);
-            gl::GenBuffers(1, &mut EBO);
-
-            gl::BindVertexArray(VAO);
-
-            gl::BindBuffer(gl::ARRAY_BUFFER, VBO);
-            gl::BufferData(
-                gl::ARRAY_BUFFER,
-                (vertices.len() * mem::size_of::<GLfloat>()) as GLsizeiptr,
-                &vertices[0] as *const f32 as *const c_void,
-                gl::STATIC_DRAW,
-            );
-
-            gl::BindBuffer(gl::ELEMENT_ARRAY_BUFFER, EBO);
-            gl::BufferData(
-                gl::ELEMENT_ARRAY_BUFFER,
-                (indices.len() * mem::size_of::<GLfloat>()) as GLsizeiptr,
-                &indices[0] as *const i32 as *const c_void,
-                gl::STATIC_DRAW,
-            );
-
-            let stride = 8 * mem::size_of::<GLfloat>() as GLsizei;
-            // position attribute
-            gl::VertexAttribPointer(0, 3, gl::FLOAT, gl::FALSE, stride, ptr::null());
-            gl::EnableVertexAttribArray(0);
-            // color attribute
-            gl::VertexAttribPointer(
-                1,
-                3,
-                gl::FLOAT,
-                gl::FALSE,
-                stride,
-                (3 * mem::size_of::<GLfloat>()) as *const c_void,
-            );
-            gl::EnableVertexAttribArray(1);
-            // texture coord attribute
-            gl::VertexAttribPointer(
-                2,
-                2,
-                gl::FLOAT,
-                gl::FALSE,
-                stride,
-                (6 * mem::size_of::<GLfloat>()) as *const c_void,
-            );
-            gl::EnableVertexAttribArray(2);
-
-            (ourShader, VBO, VAO)
-        };
-
-        let mut last_update = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_millis();
-
-        // render loop
-        while !window.should_close() {
-            // events
-            Canvas::process_events(&mut window, &events);
-
-            let now = SystemTime::now()
+            let mut last_update = SystemTime::now()
                 .duration_since(UNIX_EPOCH)
                 .unwrap()
                 .as_millis();
 
-            let maybe_points = if now - last_update > UPDATE_FREQ_MILLIS as u128 {
-                last_update = now;
-                self.point_receiver.try_recv().ok()
-            } else {
-                None
-            };
+            // render loop
+            while !window.should_close() {
+                // events
+                Canvas::process_events(&mut window, &events);
 
-            // render
-            maybe_points.map(|points| {
-                unsafe {
+                let now = SystemTime::now()
+                    .duration_since(UNIX_EPOCH)
+                    .unwrap()
+                    .as_millis();
+
+                let maybe_points = if now - last_update > UPDATE_FREQ_MILLIS as u128 {
+                    last_update = now;
+                    self.point_receiver.try_recv().ok()
+                } else {
+                    None
+                };
+
+                // render
+                maybe_points.map(|points| {
                     gl::ClearColor(1.0, 1.0, 1.0, 1.0);
                     gl::Clear(gl::COLOR_BUFFER_BIT | gl::DEPTH_BUFFER_BIT);
 
-                    // activate shader
-                    ourShader.useProgram();
-
-                    let model: Matrix4<f32> = Matrix4::zero();
+                    rectangle_program.use_program();
 
                     let view: Matrix4<f32> = Matrix4::from_translation(vec3(0., 0., -250.));
                     let projection: Matrix4<f32> =
                         perspective(Deg(45.0), SCR_WIDTH as f32 / SCR_HEIGHT as f32, 0.1, 400.0);
-                    // retrieve the matrix uniform locations
-                    let modelLoc = gl::GetUniformLocation(ourShader.ID, c_str!("model").as_ptr());
-                    let viewLoc = gl::GetUniformLocation(ourShader.ID, c_str!("view").as_ptr());
-                    // pass them to the shaders
-                    gl::UniformMatrix4fv(modelLoc, 1, gl::FALSE, model.as_ptr());
-                    gl::UniformMatrix4fv(viewLoc, 1, gl::FALSE, view.as_ptr());
-                    // note: currently we set the projection matrix each frame, but since the projection matrix rarely changes it's often best practice to set it outside the main loop only once.
-                    ourShader.setMat4(c_str!("projection"), &projection);
+                    rectangle_program.set_projection(&projection);
+                    rectangle_program.set_view(&view);
 
                     let rectPositions: Vec<Vector3<f32>> = points
                         .iter()
                         .map(|(x, y)| vec3(*x as f32, *y as f32, 0.0))
                         .collect();
 
-                    // render rectangle with different positions
-                    gl::BindVertexArray(VAO);
                     for position in rectPositions {
                         // calculate the model matrix for each object and pass it to shader before drawing
                         let model: Matrix4<f32> =
                             Matrix4::from_translation(position + vec3(-100.0, -100.0, 0.0));
-                        ourShader.setMat4(c_str!("model"), &model);
-
-                        gl::DrawElements(gl::TRIANGLES, 6, gl::UNSIGNED_INT, ptr::null());
+                        rectangle_program.set_model(&model);
+                        rectangle_program.draw_rectangle();
                     }
-                }
 
-                // glfw: swap buffers
-                window.swap_buffers();
-            });
-            // glfw: poll IO events (keys pressed/released, mouse moved etc.)
-            glfw.poll_events();
-        }
-
-        // de-allocate all resources once they've outlived their purpose
-        unsafe {
-            gl::DeleteVertexArrays(1, &VAO);
-            gl::DeleteBuffers(1, &VBO);
+                    window.swap_buffers();
+                });
+                glfw.poll_events();
+            }
         }
     }
 
