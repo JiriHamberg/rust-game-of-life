@@ -10,6 +10,8 @@ use cgmath::Matrix4;
 
 use super::shader::Shader;
 
+pub const RECTANGLE_SIZE: f32 = 1.0;
+
 pub struct RectangleProgram {
     shader: Shader,
     vao: u32,

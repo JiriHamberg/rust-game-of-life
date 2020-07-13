@@ -6,19 +6,25 @@ extern crate gl;
 
 use std::sync::mpsc::Receiver;
 
-use super::rectangle_program::RectangleProgram;
+use super::rectangle_program::{RectangleProgram, RECTANGLE_SIZE};
 
-use cgmath::{perspective, vec3, Deg, Matrix4, Vector3};
+use cgmath::{perspective, vec3, Matrix4, Rad, Vector3};
 
 use std::time::{SystemTime, UNIX_EPOCH};
 
+use std::cmp::max;
+use std::f32::consts::PI;
+
 const SCR_WIDTH: u32 = 800;
 const SCR_HEIGHT: u32 = 800;
+const FIELD_OF_VIEW: f32 = PI / 4.0; // 45 degrees
 
 const UPDATE_FREQ_MILLIS: u16 = 40;
 
 pub struct Canvas {
     pub point_receiver: Receiver<Vec<(i32, i32)>>,
+    pub height: u32,
+    pub width: u32,
 }
 
 impl Canvas {
@@ -59,6 +65,9 @@ impl Canvas {
                 .unwrap()
                 .as_millis();
 
+            let view = self.make_view();
+            let projection = self.make_projection();
+
             // render loop
             while !window.should_close() {
                 // events
@@ -83,9 +92,6 @@ impl Canvas {
 
                     rectangle_program.use_program();
 
-                    let view: Matrix4<f32> = Matrix4::from_translation(vec3(0., 0., -250.));
-                    let projection: Matrix4<f32> =
-                        perspective(Deg(45.0), SCR_WIDTH as f32 / SCR_HEIGHT as f32, 0.1, 400.0);
                     rectangle_program.set_projection(&projection);
                     rectangle_program.set_view(&view);
 
@@ -95,9 +101,10 @@ impl Canvas {
                         .collect();
 
                     for position in rectPositions {
-                        // calculate the model matrix for each object and pass it to shader before drawing
+                        let y_offset = -(self.height as f32 / 2.0);
+                        let x_offset = -(self.width as f32 / 2.0);
                         let model: Matrix4<f32> =
-                            Matrix4::from_translation(position + vec3(-100.0, -100.0, 0.0));
+                            Matrix4::from_translation(position + vec3(x_offset, y_offset, 0.0));
                         rectangle_program.set_model(&model);
                         rectangle_program.draw_rectangle();
                     }
@@ -107,6 +114,25 @@ impl Canvas {
                 glfw.poll_events();
             }
         }
+    }
+
+    fn make_view(&self) -> Matrix4<f32> {
+        let bigger_dimension = max(self.height, self.width);
+        let z_offset = bigger_dimension as f32 / (2.0 * (FIELD_OF_VIEW / 2.0).tan());
+        let xy_offset = RECTANGLE_SIZE / 2.0;
+        //position the camera so that our field of contains all the rectangles that we draw
+        Matrix4::from_translation(vec3(xy_offset, xy_offset, -z_offset))
+    }
+
+    fn make_projection(&self) -> Matrix4<f32> {
+        let bigger_dimension = max(self.height, self.width);
+
+        perspective(
+            Rad(FIELD_OF_VIEW),
+            SCR_WIDTH as f32 / SCR_HEIGHT as f32,
+            0.1,
+            2.0 * bigger_dimension as f32,
+        )
     }
 
     fn process_events(window: &mut glfw::Window, events: &Receiver<(f64, glfw::WindowEvent)>) {
