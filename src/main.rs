@@ -19,6 +19,9 @@ struct Args {
 
     #[structopt(short = "w", long = "width", default_value = "200")]
     width: u32,
+
+    #[structopt(short = "a", long = "alive-probability", default_value = "0.333")]
+    alive_probability: f64,
 }
 
 pub fn main() {
@@ -34,8 +37,11 @@ pub fn main() {
     };
 
     thread::spawn(move || {
-        let mut game =
-            game_of_life::GameOfLife::new_random(args.height as usize, args.width as usize, 0.333);
+        let mut game = game_of_life::GameOfLife::new_random(
+            args.height as usize,
+            args.width as usize,
+            args.alive_probability,
+        );
         loop {
             game.step();
 
