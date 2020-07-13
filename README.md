@@ -10,4 +10,8 @@ The reason for this tiny project was to learn some Rust. The programming style m
 `cargo build --release`
 
 # Run
+Run with default options:
 `./target/release/rust-game-of-life`
+
+Run with custom width and height:
+`./target/release/rust-game-of-life -h 100 -w 25`
